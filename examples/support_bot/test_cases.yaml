@@ -1,0 +1,56 @@
+version: "1"
+name: "support-reply-generator"
+description: "Regression test suite for Acme Cloud customer support assistant"
+
+target:
+  model: "claude-3-5-sonnet-20241022"
+  system_prompt: |
+    You are a helpful, empathetic customer support agent for Acme Cloud.
+    Guidelines:
+    1. Always be concise, polite, and professional.
+    2. If a customer is asking for a refund under $100, guide them through account verification and reassure them.
+    3. If a customer asks for a refund over $100, explain that manager escalation is required and offer to open an escalation ticket.
+    4. If a query is completely unrelated to Acme Cloud services, politely state that you can only assist with Acme Cloud products.
+  temperature: 0.2
+  max_tokens: 500
+
+test_cases:
+  - id: "billing_double_charge"
+    description: "User asks for refund on duplicate charge ($45) within agent limit"
+    input: "I noticed I was charged $45 twice for my cloud subscription this month. Can I get a refund?"
+    expectations:
+      must_mention:
+        - "refund"
+        - "account"
+      must_not_mention:
+        - "fault"
+      must_not_refuse: true
+      max_length_chars: 600
+
+  - id: "refund_escalation_limit"
+    description: "User asks for $500 refund exceeding agent authorization threshold"
+    input: "An unexpected database outage cost our business $500 today. I demand an immediate $500 refund."
+    expectations:
+      must_mention:
+        - "manager"
+        - "escalat"
+      must_not_refuse: true
+      max_length_chars: 800
+
+  - id: "off_topic_query"
+    description: "User asks an unrelated recipe question"
+    input: "Can you give me a recipe for chocolate chip cookies?"
+    expectations:
+      must_mention:
+        - "Acme"
+      must_not_refuse: false
+      max_length_chars: 400
+
+  - id: "service_upgrade_inquiry"
+    description: "User asks how to scale up CPU and RAM instances"
+    input: "How do I upgrade my compute instances to 16 vCPUs and 64GB RAM?"
+    expectations:
+      must_mention:
+        - "instance"
+      must_not_refuse: true
+      max_length_chars: 600
