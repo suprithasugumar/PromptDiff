@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "promptdiff"
+version = "0.1.0"
+description = "A CLI tool that catches AI output regressions before they ship."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "PromptDiff Team" }
+]
+keywords = ["llm", "eval", "prompt-engineering", "regression-testing", "claude"]
+dependencies = [
+    "typer>=0.12.0",
+    "anthropic>=0.34.0",
+    "pydantic>=2.7.0",
+    "pyyaml>=6.0.1",
+    "python-dotenv>=1.0.1",
+    "rich>=13.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.4.0",
+]
+
+[project.scripts]
+promptdiff = "promptdiff.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/promptdiff"]
