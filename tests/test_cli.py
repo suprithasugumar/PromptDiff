@@ -29,7 +29,7 @@ def test_cli_run_dry_run(tmp_path: Path):
 
     saved_files = list(tmp_path.glob("*.json"))
     assert len(saved_files) == 1
-    assert "support_reply_generator" in saved_files[0].name
+    assert "support-reply-generator" in saved_files[0].name
 
 
 def test_runner_dry_run():

@@ -33,6 +33,8 @@ class Expectations(BaseModel):
 class TestCase(BaseModel):
     """An individual test case definition."""
 
+    __test__ = False
+
     id: str = Field(..., description="Unique identifier for the test case.")
     description: str | None = Field(
         default=None, description="Human-readable description of the scenario."
@@ -47,19 +49,23 @@ class TestCase(BaseModel):
 class TargetConfig(BaseModel):
     """Configuration of the model/prompt target being evaluated."""
 
+    provider: str = Field(
+        default="gemini",
+        description="LLM provider backend ('gemini' or 'anthropic').",
+    )
     model: str = Field(
-        default="claude-3-5-sonnet-20241022",
+        default="gemini-3.6-flash",
         description="Model identifier to invoke.",
     )
     system_prompt: str | None = Field(
         default=None,
         description="System prompt defining the persona or behavior of the model.",
     )
-    temperature: float = Field(
-        default=0.0,
+    temperature: float | None = Field(
+        default=None,
         ge=0.0,
         le=1.0,
-        description="Sampling temperature between 0.0 and 1.0.",
+        description="Optional sampling temperature for providers/models that support it.",
     )
     max_tokens: int = Field(
         default=1000,
@@ -70,6 +76,8 @@ class TargetConfig(BaseModel):
 
 class TestSuite(BaseModel):
     """Complete test suite specification loaded from YAML."""
+
+    __test__ = False
 
     version: str = Field(
         default="1",

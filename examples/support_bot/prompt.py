@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import os
-import anthropic
 import dotenv
+from promptdiff.providers import get_provider
 
 SUPPORT_SYSTEM_PROMPT = """You are a helpful, empathetic customer support agent for Acme Cloud.
 Guidelines:
@@ -17,26 +17,22 @@ Guidelines:
 
 def generate_support_reply(
     user_message: str,
-    model: str = "claude-3-5-sonnet-20241022",
-    temperature: float = 0.2,
+    provider_name: str = "gemini",
+    model: str = "gemini-3.6-flash",
+    temperature: float | None = None,
+    max_tokens: int = 500,
 ) -> str:
-    """Standalone helper function to generate a support reply using Claude."""
+    """Generate a support reply using the configured LLM provider."""
     dotenv.load_dotenv()
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise ValueError("ANTHROPIC_API_KEY not found in environment or .env")
-
-    client = anthropic.Anthropic(api_key=api_key)
-    response = client.messages.create(
+    provider = get_provider(provider_name)
+    result = provider.generate(
+        user_input=user_message,
+        system_prompt=SUPPORT_SYSTEM_PROMPT,
         model=model,
-        max_tokens=500,
         temperature=temperature,
-        system=SUPPORT_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_message}],
+        max_tokens=max_tokens,
     )
-    return "\n".join(
-        block.text for block in response.content if hasattr(block, "text")
-    )
+    return result.text
 
 
 if __name__ == "__main__":

@@ -82,6 +82,7 @@ def run(
     console.print(
         Panel(
             f"[bold cyan]Suite:[/bold cyan] {suite.name}\n"
+            f"[bold cyan]Provider:[/bold cyan] {suite.target.provider}\n"
             f"[bold cyan]Target Model:[/bold cyan] {suite.target.model}\n"
             f"[bold cyan]Test Cases:[/bold cyan] {len(suite.test_cases)}\n"
             f"[bold cyan]Dry Run:[/bold cyan] {'Yes' if dry_run else 'No'}",
@@ -114,7 +115,7 @@ def run(
         )
 
         if verbose:
-            console.print(f"\n[bold yellow]─── {case.id} ───[/bold yellow]")
+            console.print(f"\n[bold yellow]--- {case.id} ---[/bold yellow]")
             console.print(f"[dim]Input:[/dim] {case.input}")
             if result.output:
                 console.print(f"[dim]Output:[/dim]\n{result.output}")
@@ -135,7 +136,7 @@ def run(
     console.print(table)
 
     saved_path = save_run(run_output, output_dir=output_dir)
-    console.print(f"\n[bold green]✓[/bold green] Run results saved to [bold underline]{saved_path}[/bold underline]")
+    console.print(f"\n[bold green]Success:[/bold green] Run results saved to [bold underline]{saved_path}[/bold underline]")
 
 
 if __name__ == "__main__":

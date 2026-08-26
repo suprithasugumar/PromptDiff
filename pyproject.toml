@@ -12,9 +12,10 @@ license = { text = "MIT" }
 authors = [
     { name = "PromptDiff Team" }
 ]
-keywords = ["llm", "eval", "prompt-engineering", "regression-testing", "claude"]
+keywords = ["llm", "eval", "prompt-engineering", "regression-testing", "gemini", "claude"]
 dependencies = [
     "typer>=0.12.0",
+    "google-genai>=1.0.0",
     "anthropic>=0.34.0",
     "pydantic>=2.7.0",
     "pyyaml>=6.0.1",

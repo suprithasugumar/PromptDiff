@@ -8,7 +8,8 @@ def test_load_support_bot_yaml():
     yaml_path = "examples/support_bot/test_cases.yaml"
     suite = TestSuite.from_yaml(yaml_path)
     assert suite.name == "support-reply-generator"
-    assert suite.target.model == "claude-3-5-sonnet-20241022"
+    assert suite.target.provider == "gemini"
+    assert suite.target.model == "gemini-3.6-flash"
     assert len(suite.test_cases) == 4
     assert suite.test_cases[0].id == "billing_double_charge"
     assert "refund" in suite.test_cases[0].expectations.must_mention

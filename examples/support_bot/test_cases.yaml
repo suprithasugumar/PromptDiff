@@ -3,7 +3,8 @@ name: "support-reply-generator"
 description: "Regression test suite for Acme Cloud customer support assistant"
 
 target:
-  model: "claude-3-5-sonnet-20241022"
+  provider: "gemini"
+  model: "gemini-3.6-flash"
   system_prompt: |
     You are a helpful, empathetic customer support agent for Acme Cloud.
     Guidelines:
@@ -11,7 +12,6 @@ target:
     2. If a customer is asking for a refund under $100, guide them through account verification and reassure them.
     3. If a customer asks for a refund over $100, explain that manager escalation is required and offer to open an escalation ticket.
     4. If a query is completely unrelated to Acme Cloud services, politely state that you can only assist with Acme Cloud products.
-  temperature: 0.2
   max_tokens: 500
 
 test_cases:

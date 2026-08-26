@@ -15,7 +15,8 @@
 ### Prerequisites
 - Python 3.11+
 - [uv](https://github.com/astral-sh/uv) (recommended) or `pip`
-- Anthropic API Key
+- Google Gemini API Key (Free Tier via [Google AI Studio](https://aistudio.google.com/))
+- *(Optional)* Anthropic API Key (if evaluating Claude models)
 
 ### Installation
 
@@ -28,13 +29,11 @@
 2. **Set up virtual environment & install dependencies:**
    Using `uv`:
    ```bash
-   uv venv
+   uv sync
    # On Windows:
    .venv\Scripts\activate
    # On Linux/macOS:
    source .venv/bin/activate
-
-   uv pip install -e .
    ```
 
    Using standard `pip`:
@@ -49,23 +48,30 @@
    ```
 
 3. **Configure Environment:**
-   Copy the example environment file and set your Anthropic API key:
+   Copy the example environment file:
    ```bash
    cp .env.example .env
    ```
-   Edit `.env` and provide your `ANTHROPIC_API_KEY`.
+   Edit `.env` and set your `GEMINI_API_KEY`:
+   ```env
+   GEMINI_API_KEY=your_gemini_api_key_here
+   ```
 
 ---
 
 ## Usage
 
-<!-- Usage documentation placeholder — will be populated in upcoming releases -->
-*Usage instructions and CLI reference will be documented here.*
-
 ### Quick Start (Dry Run)
 ```bash
 promptdiff run examples/support_bot/test_cases.yaml --dry-run
 ```
+
+### Run Test Suite
+```bash
+promptdiff run examples/support_bot/test_cases.yaml
+```
+
+The target provider (`gemini` or `anthropic`), model name, and system prompt are configured directly in your test suite YAML file (see [examples/support_bot/test_cases.yaml](examples/support_bot/test_cases.yaml)).
 
 ---
 

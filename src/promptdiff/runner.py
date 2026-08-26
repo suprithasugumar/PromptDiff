@@ -1,15 +1,12 @@
-"""Execution runner for PromptDiff test suites."""
+"""Execution runner for PromptDiff test suites using provider abstractions."""
 
 from __future__ import annotations
 
-import os
 import re
 import time
 from datetime import datetime, timezone
-import dotenv
-
-import anthropic
 from promptdiff.models import RunOutput, TestCase, TestCaseResult, TestSuite
+from promptdiff.providers import LLMProvider, get_provider
 
 
 def _slugify(text: str) -> str:
@@ -18,22 +15,22 @@ def _slugify(text: str) -> str:
 
 
 class SuiteRunner:
-    """Executes test suites against LLM endpoints."""
+    """Executes test suites against pluggable LLM provider backends."""
 
-    def __init__(self, api_key: str | None = None) -> None:
-        dotenv.load_dotenv()
-        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
-        self._client: anthropic.Anthropic | None = None
+    def __init__(
+        self,
+        provider_name: str | None = None,
+        api_key: str | None = None,
+    ) -> None:
+        self.provider_name = provider_name
+        self.api_key = api_key
+        self._provider_cache: dict[str, LLMProvider] = {}
 
-    @property
-    def client(self) -> anthropic.Anthropic:
-        if self._client is None:
-            if not self.api_key:
-                raise ValueError(
-                    "ANTHROPIC_API_KEY is not set. Please set it in your environment or in a .env file."
-                )
-            self._client = anthropic.Anthropic(api_key=self.api_key)
-        return self._client
+    def get_provider(self, name: str) -> LLMProvider:
+        """Get or initialize the specified provider."""
+        if name not in self._provider_cache:
+            self._provider_cache[name] = get_provider(name, api_key=self.api_key)
+        return self._provider_cache[name]
 
     def run_case(
         self,
@@ -41,7 +38,7 @@ class SuiteRunner:
         suite: TestSuite,
         dry_run: bool = False,
     ) -> TestCaseResult:
-        """Run an individual test case against the target model."""
+        """Run an individual test case against the target provider and model."""
         if dry_run:
             return TestCaseResult(
                 test_case_id=case.id,
@@ -53,36 +50,25 @@ class SuiteRunner:
                 error=None,
             )
 
+        provider_name = self.provider_name or suite.target.provider
         start_time = time.perf_counter()
         try:
-            kwargs: dict = {
-                "model": suite.target.model,
-                "max_tokens": suite.target.max_tokens,
-                "temperature": suite.target.temperature,
-                "messages": [{"role": "user", "content": case.input}],
-            }
-            if suite.target.system_prompt:
-                kwargs["system"] = suite.target.system_prompt
-
-            response = self.client.messages.create(**kwargs)
-            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-
-            # Extract response text
-            output_parts = [
-                block.text for block in response.content if hasattr(block, "text")
-            ]
-            output_text = "\n".join(output_parts)
-
-            prompt_tokens = getattr(response.usage, "input_tokens", 0)
-            completion_tokens = getattr(response.usage, "output_tokens", 0)
+            provider = self.get_provider(provider_name)
+            result = provider.generate(
+                user_input=case.input,
+                system_prompt=suite.target.system_prompt,
+                model=suite.target.model,
+                temperature=suite.target.temperature,
+                max_tokens=suite.target.max_tokens,
+            )
 
             return TestCaseResult(
                 test_case_id=case.id,
                 input=case.input,
-                output=output_text,
-                latency_ms=round(elapsed_ms, 2),
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
+                output=result.text,
+                latency_ms=result.latency_ms,
+                prompt_tokens=result.prompt_tokens,
+                completion_tokens=result.completion_tokens,
                 error=None,
             )
         except Exception as exc:
