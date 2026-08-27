@@ -99,3 +99,58 @@ def test_runner_dry_run():
     assert all(r.error is None for r in run_output.results)
     assert all("[DRY RUN Mock Output" in (r.output or "") for r in run_output.results)
 
+
+def test_cli_history_empty(tmp_path: Path):
+    db_path = tmp_path / "empty.db"
+    result = runner.invoke(app, ["history", "--db", str(db_path)])
+    assert result.exit_code == 0
+    assert "No runs found" in result.stdout
+
+
+def test_cli_history_and_run_detail(tmp_path: Path):
+    yaml_path = "examples/support_bot/test_cases.yaml"
+    db_path = tmp_path / "hist.db"
+
+    # 1. Establish baseline
+    base_res = runner.invoke(
+        app,
+        ["run", yaml_path, "--output-dir", str(tmp_path), "--db", str(db_path), "--baseline", "--dry-run"],
+    )
+    assert base_res.exit_code == 0
+
+    # 2. Run diff
+    diff_res = runner.invoke(
+        app,
+        ["run", yaml_path, "--output-dir", str(tmp_path), "--db", str(db_path), "--dry-run"],
+    )
+    # Regression in dry run causes exit code 1
+    assert diff_res.exit_code == 1
+
+    # 3. Query history table
+    hist_res = runner.invoke(app, ["history", "--db", str(db_path)])
+    assert hist_res.exit_code == 0
+    assert "Run History" in hist_res.stdout
+    assert "support" in hist_res.stdout
+    assert "BASELINE" in hist_res.stdout
+    assert "REGRESSED" in hist_res.stdout
+
+    # 4. Query history with suite name filter
+    suite_hist_res = runner.invoke(app, ["history", "support-reply-generator", "--db", str(db_path)])
+    assert suite_hist_res.exit_code == 0
+    assert "support" in suite_hist_res.stdout
+
+    # 5. Query granular run detail via --run-id
+    import sqlite3
+    conn = sqlite3.connect(str(db_path))
+    run_id = conn.execute("SELECT id FROM runs LIMIT 1").fetchone()[0]
+    conn.close()
+
+    detail_res = runner.invoke(app, ["history", "--run-id", run_id, "--db", str(db_path)])
+    assert detail_res.exit_code == 0
+    assert "Run Detail" in detail_res.stdout
+    assert "Test Case Breakdown" in detail_res.stdout
+    assert "billing" in detail_res.stdout
+
+
+
+

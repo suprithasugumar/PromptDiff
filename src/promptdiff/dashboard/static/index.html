@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PromptDiff — Observability & Regression Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              500: '#10b981',
+              600: '#059669',
+              900: '#064e3b',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    code, pre { font-family: 'JetBrains Mono', monospace; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    function App() {
+      const [suites, setSuites] = useState([]);
+      const [selectedSuite, setSelectedSuite] = useState("");
+      const [runs, setRuns] = useState([]);
+      const [selectedRun, setSelectedRun] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [loadingDetail, setLoadingDetail] = useState(false);
+      const chartRef = useRef(null);
+      const chartInstance = useRef(null);
+
+      // Load suites on mount
+      useEffect(() => {
+        fetchSuites();
+      }, []);
+
+      const fetchSuites = async () => {
+        try {
+          const res = await fetch("/api/suites");
+          const data = await res.json();
+          setSuites(data);
+          if (data.length > 0 && !selectedSuite) {
+            setSelectedSuite(data[0].suite_name);
+          }
+        } catch (err) {
+          console.error("Failed to load suites", err);
+        }
+      };
+
+      // Load runs whenever selectedSuite changes
+      useEffect(() => {
+        if (!selectedSuite) return;
+        fetchRuns(selectedSuite);
+      }, [selectedSuite]);
+
+      const fetchRuns = async (suiteName) => {
+        setLoading(true);
+        try {
+          const res = await fetch(`/api/runs?suite=${encodeURIComponent(suiteName)}&limit=30`);
+          const data = await res.json();
+          setRuns(data);
+        } catch (err) {
+          console.error("Failed to load runs", err);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const loadRunDetail = async (runId) => {
+        setLoadingDetail(true);
+        try {
+          const res = await fetch(`/api/runs/${encodeURIComponent(runId)}`);
+          const data = await res.json();
+          setSelectedRun(data);
+        } catch (err) {
+          console.error("Failed to load run detail", err);
+        } finally {
+          setLoadingDetail(false);
+        }
+      };
+
+      // Update Chart
+      useEffect(() => {
+        if (!chartRef.current || runs.length === 0) return;
+
+        const sortedRuns = [...runs].reverse();
+        const labels = sortedRuns.map(r => r.timestamp.substring(11, 19));
+        const passedData = sortedRuns.map(r => r.passed_cases);
+        const regressedData = sortedRuns.map(r => r.regressed_cases);
+        const improvedData = sortedRuns.map(r => r.improved_cases);
+
+        if (chartInstance.current) {
+          chartInstance.current.destroy();
+        }
+
+        const ctx = chartRef.current.getContext('2d');
+        chartInstance.current = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [
+              {
+                label: 'Passed',
+                data: passedData,
+                backgroundColor: 'rgba(16, 185, 129, 0.8)',
+                borderColor: '#10b981',
+                borderWidth: 1,
+                stack: 'stack0',
+              },
+              {
+                label: 'Improved',
+                data: improvedData,
+                backgroundColor: 'rgba(6, 182, 212, 0.8)',
+                borderColor: '#06b6d4',
+                borderWidth: 1,
+                stack: 'stack0',
+              },
+              {
+                label: 'Regressed',
+                data: regressedData,
+                backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                borderColor: '#ef4444',
+                borderWidth: 1,
+                stack: 'stack0',
+              },
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                labels: { color: '#94a3b8' }
+              },
+              tooltip: {
+                mode: 'index',
+                intersect: false,
+              }
+            },
+            scales: {
+              x: {
+                ticks: { color: '#64748b' },
+                grid: { color: 'rgba(51, 65, 85, 0.3)' }
+              },
+              y: {
+                ticks: { color: '#64748b', stepSize: 1 },
+                grid: { color: 'rgba(51, 65, 85, 0.3)' },
+                beginAtZero: true
+              }
+            }
+          }
+        });
+
+        return () => {
+          if (chartInstance.current) {
+            chartInstance.current.destroy();
+          }
+        };
+      }, [runs]);
+
+      // Aggregate Stats
+      const totalRunsCount = runs.length;
+      const totalPassed = runs.reduce((acc, r) => acc + r.passed_cases, 0);
+      const totalCases = runs.reduce((acc, r) => acc + r.total_cases, 0);
+      const totalRegressed = runs.reduce((acc, r) => acc + r.regressed_cases, 0);
+      const passRate = totalCases > 0 ? Math.round((totalPassed / totalCases) * 100) : 100;
+
+      return (
+        <div className="max-w-7xl mx-auto px-4 py-8">
+          {/* Header */}
+          <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-8 border-b border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center font-bold text-white shadow-lg shadow-emerald-900/40">
+                PD
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
+                  PromptDiff <span className="text-xs bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded-full font-medium">Week 3</span>
+                </h1>
+                <p className="text-sm text-slate-400">LLM Observability, Regression History & Diff Viewer</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-slate-400">Suite:</label>
+              <select
+                value={selectedSuite}
+                onChange={(e) => setSelectedSuite(e.target.value)}
+                className="bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+              >
+                {suites.map((s) => (
+                  <option key={s.suite_name} value={s.suite_name}>
+                    {s.suite_name} ({s.total_runs} runs)
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => { fetchSuites(); fetchRuns(selectedSuite); }}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-sm transition"
+              >
+                Refresh
+              </button>
+            </div>
+          </header>
+
+          {/* Stats Bar */}
+          <section className="grid grid-cols-2 md:grid-cols-4 gap-4 my-8">
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 backdrop-blur-sm">
+              <div className="text-xs font-medium text-slate-400 uppercase tracking-wider">Total Recorded Runs</div>
+              <div className="text-3xl font-bold text-slate-100 mt-2">{totalRunsCount}</div>
+            </div>
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 backdrop-blur-sm">
+              <div className="text-xs font-medium text-slate-400 uppercase tracking-wider">Overall Pass Rate</div>
+              <div className="text-3xl font-bold text-emerald-400 mt-2">{passRate}%</div>
+            </div>
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 backdrop-blur-sm">
+              <div className="text-xs font-medium text-slate-400 uppercase tracking-wider">Total Regressions Caught</div>
+              <div className="text-3xl font-bold text-red-400 mt-2">{totalRegressed}</div>
+            </div>
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 backdrop-blur-sm">
+              <div className="text-xs font-medium text-slate-400 uppercase tracking-wider">Target Model</div>
+              <div className="text-lg font-semibold text-cyan-400 mt-2 truncate">
+                {runs[0]?.model || "gemini-3.6-flash"}
+              </div>
+            </div>
+          </section>
+
+          {/* Trend Chart */}
+          <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 mb-8 backdrop-blur-sm shadow-xl">
+            <h2 className="text-lg font-semibold text-slate-200 mb-4 flex items-center justify-between">
+              <span>Regression & Pass Trend Over Time</span>
+              <span className="text-xs text-slate-500 font-normal">Past {runs.length} runs</span>
+            </h2>
+            <div className="h-64 w-full">
+              <canvas ref={chartRef}></canvas>
+            </div>
+          </section>
+
+          {/* Runs History Table */}
+          <section className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden backdrop-blur-sm shadow-xl">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-200">Execution History</h2>
+              <span className="text-xs text-slate-400">Click any run to view per-test-case diffs</span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-300">
+                <thead className="bg-slate-950/80 text-xs text-slate-400 uppercase border-b border-slate-800">
+                  <tr>
+                    <th className="px-6 py-4">Run ID / Timestamp</th>
+                    <th className="px-6 py-4">Status</th>
+                    <th className="px-6 py-4">Model</th>
+                    <th className="px-6 py-4 text-center">Results (P / I / R)</th>
+                    <th className="px-6 py-4 text-right">Judge Calls</th>
+                    <th className="px-6 py-4 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {runs.map((run) => {
+                    const isBase = run.is_baseline === 1;
+                    let badgeColor = "bg-slate-800 text-slate-300 border-slate-700";
+                    if (run.status === "PASS") badgeColor = "bg-emerald-950/80 text-emerald-400 border-emerald-800";
+                    else if (run.status === "REGRESSED") badgeColor = "bg-red-950/80 text-red-400 border-red-800";
+                    else if (run.status === "BASELINE") badgeColor = "bg-purple-950/80 text-purple-400 border-purple-800";
+
+                    return (
+                      <tr
+                        key={run.id}
+                        onClick={() => loadRunDetail(run.id)}
+                        className="hover:bg-slate-800/40 cursor-pointer transition"
+                      >
+                        <td className="px-6 py-4">
+                          <div className="font-mono text-xs text-slate-200 font-medium">{run.id}</div>
+                          <div className="text-xs text-slate-500 mt-0.5">{run.timestamp.replace("T", " ").substring(0, 19)} UTC</div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${badgeColor}`}>
+                            {run.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-xs text-slate-400 font-mono">
+                          {run.provider}/{run.model}
+                        </td>
+                        <td className="px-6 py-4 text-center font-mono text-xs">
+                          <span className="text-emerald-400 font-semibold">{run.passed_cases}</span> /{" "}
+                          <span className="text-cyan-400 font-semibold">{run.improved_cases}</span> /{" "}
+                          <span className="text-red-400 font-semibold">{run.regressed_cases}</span>
+                        </td>
+                        <td className="px-6 py-4 text-right text-xs text-slate-400">
+                          {run.judge_calls_count > 0 ? (
+                            <span className="text-amber-400 font-medium">{run.judge_calls_count}</span>
+                          ) : (
+                            <span className="text-slate-600">0</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); loadRunDetail(run.id); }}
+                            className="text-xs text-emerald-400 hover:text-emerald-300 font-medium"
+                          >
+                            View Diff →
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          {/* Drill-down Detail Modal */}
+          {selectedRun && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-5xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+                {/* Modal Header */}
+                <div className="p-6 border-b border-slate-800 flex items-start justify-between bg-slate-950/50">
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-xl font-bold text-white font-mono">{selectedRun.id}</h3>
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold border bg-slate-800 text-slate-300 border-slate-700">
+                        {selectedRun.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Suite: <span className="text-slate-200">{selectedRun.suite_name}</span> | Model: <span className="text-slate-200">{selectedRun.provider}/{selectedRun.model}</span> | Timestamp: {selectedRun.timestamp}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setSelectedRun(null)}
+                    className="text-slate-400 hover:text-white text-lg font-bold p-2 leading-none"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Modal Body: Test Cases */}
+                <div className="p-6 overflow-y-auto space-y-6 flex-1">
+                  <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
+                    Test Case Evaluations ({selectedRun.cases?.length || 0})
+                  </h4>
+
+                  {selectedRun.cases?.map((c) => {
+                    let statusBadge = "bg-emerald-950 text-emerald-400 border-emerald-800";
+                    if (c.status === "regressed") statusBadge = "bg-red-950 text-red-400 border-red-800";
+                    else if (c.status === "improved") statusBadge = "bg-cyan-950 text-cyan-400 border-cyan-800";
+                    else if (c.status === "error") statusBadge = "bg-magenta-950 text-magenta-400 border-magenta-800";
+
+                    return (
+                      <div
+                        key={c.id}
+                        className="bg-slate-950 border border-slate-800/80 rounded-xl p-5 space-y-4"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-3">
+                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase border ${statusBadge}`}>
+                              {c.status}
+                            </span>
+                            <span className="font-mono text-sm font-semibold text-slate-200">
+                              {c.test_case_id}
+                            </span>
+                          </div>
+
+                          <div className="text-xs text-slate-400 flex items-center gap-4">
+                            {c.similarity_score !== null && (
+                              <span>Cosine Sim: <strong className="text-slate-200">{c.similarity_score.toFixed(3)}</strong></span>
+                            )}
+                            {c.judge_verdict && (
+                              <span>
+                                Judge: <strong className={c.judge_verdict === 'worse' ? 'text-red-400' : (c.judge_verdict === 'better' ? 'text-cyan-400' : 'text-amber-400')}>{c.judge_verdict.toUpperCase()}</strong> ({c.judge_category})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Input */}
+                        <div>
+                          <div className="text-xs text-slate-500 font-medium uppercase mb-1">Input Prompt</div>
+                          <div className="bg-slate-900/80 border border-slate-800 rounded p-2.5 text-xs text-slate-300 font-mono">
+                            {c.input}
+                          </div>
+                        </div>
+
+                        {/* Judge Reasoning if present */}
+                        {c.judge_reasoning && (
+                          <div className="bg-amber-950/30 border border-amber-900/50 rounded-lg p-3 text-xs text-amber-200">
+                            <strong>Judge Note:</strong> {c.judge_reasoning} (Confidence: {c.judge_confidence?.toFixed(2)})
+                          </div>
+                        )}
+
+                        {/* Expectation Failures */}
+                        {c.expectation_failures && c.expectation_failures.length > 0 && (
+                          <div className="bg-red-950/30 border border-red-900/50 rounded-lg p-3 text-xs text-red-300">
+                            <strong>Expectation Failures:</strong>
+                            <ul className="list-disc list-inside mt-1">
+                              {c.expectation_failures.map((f, i) => (
+                                <li key={i}>{f}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {/* Side by Side Diff */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+                          <div>
+                            <div className="text-xs text-slate-400 font-medium uppercase mb-1">Baseline Output (A)</div>
+                            <div className="bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs text-slate-300 max-h-48 overflow-y-auto whitespace-pre-wrap font-mono">
+                              {c.baseline_output || "(No baseline recorded for this case)"}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs text-slate-400 font-medium uppercase mb-1">Current Output (B)</div>
+                            <div className="bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 max-h-48 overflow-y-auto whitespace-pre-wrap font-mono">
+                              {c.output || "(No output recorded)"}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>

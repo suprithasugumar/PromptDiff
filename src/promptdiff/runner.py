@@ -90,7 +90,8 @@ class SuiteRunner:
         """Run all test cases in a suite and assemble a RunOutput."""
         now = datetime.now(timezone.utc)
         timestamp_str = now.isoformat()
-        run_id = f"run_{now.strftime('%Y%m%d_%H%M%S')}_{_slugify(suite.name)}"
+        ms = now.microsecond // 1000
+        run_id = f"run_{now.strftime('%Y%m%d_%H%M%S')}_{ms:03d}_{_slugify(suite.name)}"
 
         results: list[TestCaseResult] = []
         for case in suite.test_cases:
