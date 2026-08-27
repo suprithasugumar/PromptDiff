@@ -1,0 +1,92 @@
+name: PromptDiff Regression Check
+
+on:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'examples/**'
+      - 'prompts/**'
+      - 'src/**'
+      - 'pyproject.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  eval:
+    name: LLM Regression Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv & Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install PromptDiff
+        run: uv sync --frozen
+
+      - name: Run PromptDiff Suite
+        id: promptdiff
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          uv run promptdiff run examples/support_bot/test_cases.yaml \
+            --markdown-report pr_comment.md \
+            --fail-on any
+        continue-on-error: true
+
+      - name: Post or Update PR Comment
+        uses: actions/github-script@v7
+        if: always() && github.event_name == 'pull_request'
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const commentFile = 'pr_comment.md';
+            if (!fs.existsSync(commentFile)) {
+              console.log('No comment report file generated.');
+              return;
+            }
+            const body = fs.readFileSync(commentFile, 'utf8');
+            const commentTag = '<!-- promptdiff-pr-comment -->';
+            const fullBody = `${commentTag}\n${body}`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existingComment = comments.find(c => c.body && c.body.includes(commentTag));
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: fullBody,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: fullBody,
+              });
+            }
+
+      - name: Enforce Check Status
+        if: steps.promptdiff.outcome == 'failure'
+        run: |
+          echo "PromptDiff detected regressions above the configured threshold."
+          exit 1

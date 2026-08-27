@@ -15,19 +15,18 @@ from promptdiff.db import (
     DEFAULT_DB_PATH,
     get_run_detail,
     get_runs_for_suite,
-    get_suites,
     record_diff_report,
     record_run,
 )
 from promptdiff.diff import DiffEngine
 from promptdiff.models import TestCase, TestCaseResult, TestSuite
-from promptdiff.report import render_diff_report
+from promptdiff.report import generate_markdown_report, render_diff_report
 from promptdiff.runner import SuiteRunner
 from promptdiff.storage import get_latest_baseline, save_baseline, save_run
 
 app = typer.Typer(
     name="promptdiff",
-    help="PromptDiff: CLI tool for LLM regression testing and observability.",
+    help="PromptDiff: Automated regression testing and observability for LLM prompts and models.",
     add_completion=False,
     no_args_is_help=True,
 )
@@ -51,7 +50,7 @@ def main(
         is_eager=True,
     ),
 ):
-    """PromptDiff CLI."""
+    """PromptDiff: Catch AI regressions before shipping prompt/model changes."""
     pass
 
 
@@ -77,6 +76,22 @@ def run(
         "-t",
         help="Cosine similarity threshold (0.0 - 1.0) below which cases are flagged for LLM judge.",
     ),
+    markdown_report: Optional[Path] = typer.Option(
+        None,
+        "--markdown-report",
+        "-m",
+        help="Optional file path to output a GitHub PR comment markdown report.",
+    ),
+    fail_on: str = typer.Option(
+        "any",
+        "--fail-on",
+        help="Failure severity policy: 'any' (default), 'hard' (only expectation failures/errors), 'judge-worse' (judge worse or hard failures), 'none' (never fail).",
+    ),
+    max_regressions: int = typer.Option(
+        0,
+        "--max-regressions",
+        help="Allowable number of regressed cases before exiting with failure (default: 0).",
+    ),
     output_dir: Path = typer.Option(
         Path("runs"),
         "--output-dir",
@@ -100,7 +115,7 @@ def run(
         help="Enable detailed logging of model requests and responses.",
     ),
 ):
-    """Run a test suite against the target model and diff against the baseline."""
+    """Run a test suite against the target model and diff against the stored baseline."""
     try:
         suite = TestSuite.from_yaml(config)
     except Exception as exc:
@@ -206,19 +221,67 @@ def run(
     # Persist diff report to SQLite
     record_diff_report(report, db_path=db)
 
+    # Optional export to Markdown report for PR comment / CI artifact
+    if markdown_report:
+        try:
+            md_text = generate_markdown_report(report)
+            markdown_report.parent.mkdir(parents=True, exist_ok=True)
+            markdown_report.write_text(md_text, encoding="utf-8")
+            console.print(f"[dim]Markdown report written to: {markdown_report}[/dim]")
+        except Exception as exc:
+            console.print(f"[bold yellow]Warning:[/bold yellow] Failed to write markdown report: {exc}")
+
     console.print()
     render_diff_report(report, console=console)
 
-    if report.has_regressions:
+    # Evaluate failure criteria based on fail_on policy and max_regressions
+    policy = fail_on.strip().lower()
+    should_fail = False
+    fail_reasons: list[str] = []
+
+    if policy == "none":
+        should_fail = False
+    elif policy == "hard":
+        hard_failures = [
+            c for c in report.case_diffs
+            if c.error or (c.expectations_result and not c.expectations_result.passed)
+        ]
+        if len(hard_failures) > max_regressions:
+            should_fail = True
+            fail_reasons.append(
+                f"{len(hard_failures)} hard expectation/runtime failure(s) (threshold: {max_regressions})"
+            )
+    elif policy == "judge-worse":
+        judge_worse_cases = [
+            c for c in report.case_diffs
+            if c.error
+            or (c.expectations_result and not c.expectations_result.passed)
+            or (c.judge_verdict and c.judge_verdict.verdict == "worse")
+        ]
+        if len(judge_worse_cases) > max_regressions:
+            should_fail = True
+            fail_reasons.append(
+                f"{len(judge_worse_cases)} worse judge verdict(s) / error(s) (threshold: {max_regressions})"
+            )
+    else:  # default: "any"
+        if report.regressed_cases > max_regressions or report.error_cases > 0:
+            should_fail = True
+            fail_reasons.append(
+                f"{report.regressed_cases} regression(s) (threshold: {max_regressions}) and {report.error_cases} error(s)"
+            )
+
+    if should_fail:
+        reasons_text = "; ".join(fail_reasons)
         console.print(
-            f"\n[bold red]FAILURE:[/bold red] Detected regressions or errors in test suite '{suite.name}'. (Recorded to {db})\n"
+            f"\n[bold red]FAILURE:[/bold red] Detected regressions exceeding failure policy '{policy}': {reasons_text}. (Recorded to {db})\n"
         )
         raise typer.Exit(code=1)
     else:
         console.print(
-            f"\n[bold green]SUCCESS:[/bold green] No regressions detected across all test cases. (Recorded to {db})\n"
+            f"\n[bold green]SUCCESS:[/bold green] Suite passed within regression policy '{policy}' (max allowed: {max_regressions}). (Recorded to {db})\n"
         )
         raise typer.Exit(code=0)
+
 
 
 @app.command(name="history")

@@ -152,5 +152,49 @@ def test_cli_history_and_run_detail(tmp_path: Path):
     assert "billing" in detail_res.stdout
 
 
+def test_cli_run_markdown_report_and_fail_on(tmp_path: Path):
+    yaml_path = "examples/support_bot/test_cases.yaml"
+    md_file = tmp_path / "pr_comment.md"
 
+    # Establish baseline
+    base_res = runner.invoke(
+        app,
+        ["run", yaml_path, "--output-dir", str(tmp_path), "--baseline", "--dry-run"],
+    )
+    assert base_res.exit_code == 0
 
+    # 1. Run with --fail-on none and --markdown-report (should exit 0 despite regressions)
+    diff_res_none = runner.invoke(
+        app,
+        [
+            "run",
+            yaml_path,
+            "--output-dir",
+            str(tmp_path),
+            "--dry-run",
+            "--markdown-report",
+            str(md_file),
+            "--fail-on",
+            "none",
+        ],
+    )
+    assert diff_res_none.exit_code == 0
+    assert md_file.exists()
+    md_content = md_file.read_text(encoding="utf-8")
+    assert "PromptDiff" in md_content
+    assert "Summary" in md_content
+
+    # 2. Run with --max-regressions 10 (should exit 0)
+    diff_res_max = runner.invoke(
+        app,
+        [
+            "run",
+            yaml_path,
+            "--output-dir",
+            str(tmp_path),
+            "--dry-run",
+            "--max-regressions",
+            "10",
+        ],
+    )
+    assert diff_res_max.exit_code == 0
