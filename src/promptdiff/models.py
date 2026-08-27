@@ -125,6 +125,8 @@ class TestSuite(BaseModel):
 class TestCaseResult(BaseModel):
     """Result of running a single test case against the model."""
 
+    __test__ = False
+
     test_case_id: str
     input: str
     output: str | None = None
@@ -142,3 +144,74 @@ class RunOutput(BaseModel):
     suite_name: str
     target: TargetConfig
     results: list[TestCaseResult] = Field(default_factory=list)
+
+
+class ExpectationsCheckResult(BaseModel):
+    """Result of programmatic expectation assertions."""
+
+    passed: bool = True
+    failures: list[str] = Field(default_factory=list)
+
+
+class JudgeVerdict(BaseModel):
+    """Structured verdict from LLM-as-judge evaluation."""
+
+    reasoning: str
+    verdict: str = Field(
+        ...,
+        description="Outcome of comparison: 'better', 'worse', or 'equivalent'.",
+    )
+    category: str = Field(
+        default="none",
+        description="Classification of difference: meaning_shift, tone_shift, new_refusal, length_violation, etc.",
+    )
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
+class TestCaseDiffResult(BaseModel):
+    """Comparison result for a single test case between baseline and new run."""
+
+    __test__ = False
+
+    test_case_id: str
+    input: str
+    status: str = Field(
+        ...,
+        description="Overall status: 'pass', 'regressed', 'improved', or 'error'.",
+    )
+    similarity_score: float | None = None
+    baseline_output: str | None = None
+    new_output: str | None = None
+    expectations_result: ExpectationsCheckResult = Field(
+        default_factory=ExpectationsCheckResult
+    )
+    flagged_for_judge: bool = False
+    flag_reasons: list[str] = Field(default_factory=list)
+    judge_verdict: JudgeVerdict | None = None
+    latency_delta_ms: float = 0.0
+    token_delta: int = 0
+    error: str | None = None
+
+
+class DiffReport(BaseModel):
+    """Aggregated comparison report between a baseline run and a new run."""
+
+    suite_name: str
+    baseline_run_id: str
+    baseline_timestamp: str
+    new_run_id: str
+    new_timestamp: str
+    target: TargetConfig
+    total_cases: int = 0
+    passed_cases: int = 0
+    regressed_cases: int = 0
+    improved_cases: int = 0
+    error_cases: int = 0
+    judge_calls_count: int = 0
+    case_diffs: list[TestCaseDiffResult] = Field(default_factory=list)
+
+    @property
+    def has_regressions(self) -> bool:
+        """True if any test case regressed or produced an error."""
+        return self.regressed_cases > 0 or self.error_cases > 0
+
